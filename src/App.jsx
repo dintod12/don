@@ -6,30 +6,156 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
-  const [liveCount, setLiveCount] = useState(186);
 
+  // STATE REAL-TIME
+  const [liveCount, setLiveCount] = useState(1);
+  const [userGeo, setUserGeo] = useState({
+    country: "Indonesia",
+    flag: "🇮🇩",
+    city: "Jakarta",
+    device: "Desktop - Chrome",
+  });
+
+  const [liveVisitors, setLiveVisitors] = useState([
+    {
+      time: "19:01:23",
+      country: "Indonesia",
+      flag: "🇮🇩",
+      path: "/downloader/tiktok",
+      device: "Android - Chrome",
+    },
+    {
+      time: "19:01:18",
+      country: "Malaysia",
+      flag: "🇲🇾",
+      path: "/downloader/youtube",
+      device: "Android - Chrome",
+    },
+    {
+      time: "19:01:15",
+      country: "Indonesia",
+      flag: "🇮🇩",
+      path: "/downloader/spotify",
+      device: "Windows - Chrome",
+    },
+    {
+      time: "19:01:11",
+      country: "India",
+      flag: "🇮🇳",
+      path: "/api/docs",
+      device: "Android - Firefox",
+    },
+    {
+      time: "19:01:07",
+      country: "Singapore",
+      flag: "🇸🇬",
+      path: "/downloader/instagram",
+      device: "iPhone - Safari",
+    },
+  ]);
+
+  const [recentDownloads, setRecentDownloads] = useState([
+    { title: "TikTok Video", duration: "00:00:15 • MP4", time: "19:01:21", type: "tiktok", icon: "♪" },
+    { title: "YouTube Video", duration: "00:03:45 • MP4 (1080p)", time: "19:01:18", type: "youtube", icon: "▶" },
+    { title: "Spotify Audio", duration: "MP3 • 3.21 MB", time: "19:01:11", type: "spotify", icon: "🎧" },
+  ]);
+
+  const [activities, setActivities] = useState([
+    { text: "🇮🇩 Pengunjung dari Indonesia", time: "19:01:23" },
+    { text: "♪ Download TikTok Video", time: "19:01:21" },
+    { text: "⚡ Request API /api/download/ytmp4", time: "19:01:18" },
+    { text: "🎧 Download Spotify Audio", time: "19:01:11" },
+  ]);
+
+  // DETEKSI PERANGKAT ASLI
+  const getDeviceInfo = () => {
+    const ua = navigator.userAgent;
+    let os = "Windows";
+    if (/Android/i.test(ua)) os = "Android";
+    else if (/iPhone|iPad|iPod/i.test(ua)) os = "iPhone";
+    else if (/Mac/i.test(ua)) os = "macOS";
+    else if (/Linux/i.test(ua)) os = "Linux";
+
+    let browser = "Chrome";
+    if (/Firefox/i.test(ua)) browser = "Firefox";
+    else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
+    else if (/Edge/i.test(ua)) browser = "Edge";
+
+    return `${os} - ${browser}`;
+  };
+
+  const getTimeString = () => {
+    return new Date().toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+
+  // 1. AMBIL DATA PENGUNJUNG ASLI (GEO IP)
   useEffect(() => {
-    fetch("/api/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "visit" }),
-    }).catch(() => {});
+    const device = getDeviceInfo();
 
-    const timer = setInterval(() => {
-      setLiveCount((prev) => prev + (Math.random() > 0.48 ? 1 : -1));
+    fetch("https://ipwho.is/")
+      .then((res) => res.json())
+      .then((data) => {
+        const country = data.country || "Indonesia";
+        const flag = data.country_code === "ID" ? "🇮🇩" : data.country_code === "MY" ? "🇲🇾" : data.country_code === "SG" ? "🇸🇬" : "🌐";
+        const currentData = {
+          country,
+          flag,
+          city: data.city || "Online",
+          device,
+        };
+
+        setUserGeo(currentData);
+
+        // Masukkan pengunjung ini ke tabel Live Pengunjung real-time
+        const newLog = {
+          time: getTimeString(),
+          country: `${currentData.country} (${currentData.city})`,
+          flag: currentData.flag,
+          path: window.location.pathname || "/",
+          device: currentData.device,
+        };
+
+        setLiveVisitors((prev) => [newLog, ...prev.slice(0, 5)]);
+        setActivities((prev) => [
+          { text: `${flag} Pengunjung dari ${currentData.country}`, time: getTimeString() },
+          ...prev.slice(0, 4),
+        ]);
+      })
+      .catch(() => {
+        setUserGeo((prev) => ({ ...prev, device }));
+      });
+
+    // Simulasi traffic acak natural
+    const interval = setInterval(() => {
+      setLiveCount((prev) => Math.max(120, prev + (Math.random() > 0.48 ? 1 : -1)));
     }, 4500);
-    return () => clearInterval(timer);
+
+    return () => clearInterval(interval);
   }, []);
 
+  // 2. LOGIKA DOWNLOAD DAN TAMBAH AKTIVITAS REALTIME
   const handleDownload = async (e) => {
     e.preventDefault();
     if (!url.trim()) {
-      setError("Masukkan link terlebih dahulu.");
+      setError("Masukkan link video atau audio terlebih dahulu.");
       return;
     }
+
     setLoading(true);
     setError("");
     setResult(null);
+
+    const currentTime = getTimeString();
+
+    // Catat log request
+    setActivities((prev) => [
+      { text: `⚡ Memproses link: ${url.substring(0, 24)}...`, time: currentTime },
+      ...prev.slice(0, 4),
+    ]);
 
     try {
       const res = await fetch("/api/download", {
@@ -37,11 +163,30 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
+
       const data = await res.json();
-      if (!res.ok || !data.status) throw new Error(data.message || "Gagal memproses media.");
+      if (!res.ok || !data.status) {
+        throw new Error(data.message || "Gagal memproses link media.");
+      }
+
       setResult(data);
+
+      // Tambahkan ke Download Terbaru secara real-time
+      const newDl = {
+        title: data.title || "Media Download",
+        duration: data.duration ? `${data.duration} • MP4` : "Direct File",
+        time: currentTime,
+        type: data.platform || "tiktok",
+        icon: data.platform === "youtube" ? "▶" : data.platform === "spotify" ? "🎧" : "♪",
+      };
+
+      setRecentDownloads((prev) => [newDl, ...prev.slice(0, 4)]);
+      setActivities((prev) => [
+        { text: `✅ Berhasil unduh ${data.platform?.toUpperCase()}`, time: currentTime },
+        ...prev.slice(0, 4),
+      ]);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Terjadi kesalahan pada server.");
     } finally {
       setLoading(false);
     }
@@ -49,12 +194,15 @@ export default function App() {
 
   return (
     <div className="portal-container">
-      {/* NAVBAR */}
+      {/* ================= NAVBAR ================= */}
       <header className="main-navbar">
         <div className="nav-brand">
           <div className="brand-badge-logo">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M12 4c-3.3 0-5.5 1.6-5.5 4 0 4.6 11 2 11 6.6 0 2.6-2.2 4.4-5.5 4.4-3 0-5.6-1.5-5.6-3.4h2.8c0 .7 1.3 1.3 2.8 1.3 1.8 0 2.7-.8 2.7-1.6 0-4.6-11-2-11-6.6 0-3 2.4-4.7 5.5-4.7 2.8 0 5 1.3 5 3.3h-2.7c0-.8-1.2-1.3-2.5-1.3z" fill="#1ed760" />
+              <path
+                d="M12 4c-3.3 0-5.5 1.6-5.5 4 0 4.6 11 2 11 6.6 0 2.6-2.2 4.4-5.5 4.4-3 0-5.6-1.5-5.6-3.4h2.8c0 .7 1.3 1.3 2.8 1.3 1.8 0 2.7-.8 2.7-1.6 0-4.6-11-2-11-6.6 0-3 2.4-4.7 5.5-4.7 2.8 0 5 1.3 5 3.3h-2.7c0-.8-1.2-1.3-2.5-1.3z"
+                fill="#1ed760"
+              />
             </svg>
           </div>
           <div className="brand-text">
@@ -65,19 +213,19 @@ export default function App() {
 
         <nav className="nav-menu-links">
           <a href="#home" className="active">Home</a>
-          <a href="#downloader">Downloader</a>
-          <a href="#tools">Tools</a>
+          <a href="#downloader">Downloader ⌄</a>
+          <a href="#tools">Tools ⌄</a>
           <a href="#endpoint">Endpoint</a>
           <a href="#statistik">Statistik</a>
           <a href="#pengunjung">Pengunjung</a>
         </nav>
 
         <div className="nav-action">
-          <button className="status-api-pill">Status API</button>
+          <button className="status-api-pill">● Status API Online</button>
         </div>
       </header>
 
-      {/* HERO */}
+      {/* ================= HERO SECTION ================= */}
       <section className="hero-grid-section" id="home">
         <div className="hero-left-content">
           <h1 className="hero-main-heading">
@@ -90,35 +238,40 @@ export default function App() {
 
           <form className="hero-input-group" onSubmit={handleDownload}>
             <div className="input-with-icon">
-              <span>🔗</span>
+              <span className="link-icon">🔗</span>
               <input
                 type="text"
                 placeholder="Tempel link video atau audio di sini..."
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setError("");
+                }}
               />
             </div>
             <button type="submit" className="hero-submit-btn" disabled={loading}>
-              {loading ? "..." : "Download →"}
+              {loading ? "Memproses..." : "Download →"}
             </button>
           </form>
-          <span className="hero-example-hint">Contoh: https://www.tiktok.com/@user/video/1234567890</span>
+          <span className="hero-example-hint">
+            Lokasi Anda terdeteksi: <b>{userGeo.flag} {userGeo.country} ({userGeo.city})</b> • {userGeo.device}
+          </span>
 
           {error && <div className="hero-err-msg">❌ {error}</div>}
 
           {result && (
             <div className="hero-result-preview">
               <div className="result-thumb-info">
-                {result.thumbnail && <img src={result.thumbnail} alt="" />}
+                {result.thumbnail && <img src={result.thumbnail} alt="Preview" />}
                 <div>
                   <h4>{result.title}</h4>
                   <small>{result.author || result.platform}</small>
                 </div>
               </div>
               <div className="result-buttons">
-                {result.downloads?.map((d, i) => (
-                  <a key={i} href={d.url} target="_blank" rel="noreferrer" download className="dl-item-btn">
-                    {d.text} ↓
+                {result.downloads?.map((item, idx) => (
+                  <a key={idx} href={item.url} target="_blank" rel="noreferrer" download className="dl-item-btn">
+                    {item.text} ↓
                   </a>
                 ))}
               </div>
@@ -126,11 +279,14 @@ export default function App() {
           )}
         </div>
 
+        {/* HERO MOCKUP RIGHT */}
         <div className="hero-mockup-wrapper">
           <div className="floating-sphere-glow"></div>
           <div className="phone-screen-container">
             <div className="phone-inner-card">
-              <span className="hero-glow-arrow">↓</span>
+              <div className="phone-download-target">
+                <span className="hero-glow-arrow">↓</span>
+              </div>
             </div>
           </div>
           <div className="floating-app-icon icon-tt">♪</div>
@@ -142,7 +298,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* METRIC CARDS */}
+      {/* ================= 4 METRIC STAT CARDS ================= */}
       <section className="metric-strip-grid" id="statistik">
         <div className="metric-card">
           <div className="metric-icon-box icon-green">👥</div>
@@ -181,20 +337,30 @@ export default function App() {
         </div>
       </section>
 
-      {/* CHART & TOP COUNTRY */}
+      {/* ================= STATISTIK PENGUNJUNG & TOP NEGARA ================= */}
       <section className="dual-split-grid">
         <div className="card-panel">
           <div className="panel-header-row">
             <h3 className="panel-title">Statistik Pengunjung</h3>
             <select className="panel-select-filter">
               <option>7 Hari Terakhir</option>
+              <option>30 Hari Terakhir</option>
             </select>
           </div>
 
           <div className="chart-stat-summary">
-            <div><span className="muted-label">Pengunjung</span><h4 className="num-green">128.547</h4></div>
-            <div><span className="muted-label">Pengunjung Unik</span><h4 className="num-blue">98.213</h4></div>
-            <div><span className="muted-label">Page Views</span><h4 className="num-purple">312.645</h4></div>
+            <div>
+              <span className="muted-label">Pengunjung</span>
+              <h4 className="num-green">128.547</h4>
+            </div>
+            <div>
+              <span className="muted-label">Pengunjung Unik</span>
+              <h4 className="num-blue">98.213</h4>
+            </div>
+            <div>
+              <span className="muted-label">Page Views</span>
+              <h4 className="num-purple">312.645</h4>
+            </div>
           </div>
 
           <div className="chart-svg-box">
@@ -227,6 +393,7 @@ export default function App() {
               <text x="500" y="195" fill="#64748b" fontSize="10">23 Mei</text>
               <text x="585" y="195" fill="#64748b" fontSize="10">24 Mei</text>
             </svg>
+
             <div className="chart-legend-row">
               <span><i className="legend-marker dot-green"></i> Pengunjung</span>
               <span><i className="legend-marker dot-blue"></i> Pengunjung Unik</span>
@@ -243,8 +410,10 @@ export default function App() {
               <circle cx="215" cy="75" r="14" fill="#1ed760" opacity="0.3" />
               <circle cx="215" cy="75" r="5" fill="#1ed760" />
               <circle cx="180" cy="65" r="4" fill="#3b82f6" />
+              <circle cx="85" cy="45" r="4" fill="#64748b" />
             </svg>
           </div>
+
           <div className="country-rating-list">
             <div className="country-row">
               <span className="country-title">🇮🇩 Indonesia</span>
@@ -275,8 +444,9 @@ export default function App() {
         </div>
       </section>
 
-      {/* LIVE PENGUNJUNG & DOWNLOAD TERBARU */}
+      {/* ================= LIVE PENGUNJUNG & DOWNLOAD TERBARU ================= */}
       <section className="dual-split-grid" id="pengunjung">
+        {/* TABEL LIVE VISITORS REALTIME */}
         <div className="card-panel">
           <div className="panel-header-row">
             <h3 className="panel-title flex-align">
@@ -284,6 +454,7 @@ export default function App() {
             </h3>
             <span className="live-number-label">{liveCount}</span>
           </div>
+
           <div className="table-wrapper">
             <table className="panel-table">
               <thead>
@@ -295,41 +466,44 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                <tr><td>● 19:01:23</td><td>🇮🇩 Indonesia</td><td><code>/downloader/tiktok</code></td><td>Android - Chrome</td></tr>
-                <tr><td>● 19:01:18</td><td>🇲🇾 Malaysia</td><td><code>/downloader/youtube</code></td><td>Android - Chrome</td></tr>
-                <tr><td>● 19:01:15</td><td>🇮🇩 Indonesia</td><td><code>/downloader/spotify</code></td><td>Windows - Chrome</td></tr>
-                <tr><td>● 19:01:11</td><td>🇮🇳 India</td><td><code>/api/docs</code></td><td>Android - Firefox</td></tr>
-                <tr><td>● 19:01:07</td><td>🇸🇬 Singapore</td><td><code>/downloader/instagram</code></td><td>iPhone - Safari</td></tr>
+                {liveVisitors.map((v, i) => (
+                  <tr key={i}>
+                    <td><span className="live-dot-mini">●</span> {v.time}</td>
+                    <td>{v.flag} {v.country}</td>
+                    <td><code>{v.path}</code></td>
+                    <td>{v.device}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+
           <button className="panel-footer-btn">Lihat Semua Pengunjung →</button>
         </div>
 
+        {/* DOWNLOAD TERBARU REALTIME */}
         <div className="card-panel">
           <h3 className="panel-title">Download Terbaru</h3>
           <div className="recent-media-list">
-            <div className="media-item">
-              <div className="platform-icon-box bg-tiktok">♪</div>
-              <div className="media-item-info"><h5>TikTok Video</h5><span>00:00:15 • MP4</span></div>
-              <span className="media-item-time">19:01:21</span>
-            </div>
-            <div className="media-item">
-              <div className="platform-icon-box bg-youtube">▶</div>
-              <div className="media-item-info"><h5>YouTube Video</h5><span>00:03:45 • MP4</span></div>
-              <span className="media-item-time">19:01:18</span>
-            </div>
-            <div className="media-item">
-              <div className="platform-icon-box bg-spotify">🎧</div>
-              <div className="media-item-info"><h5>Spotify Audio</h5><span>MP3 • 3.21 MB</span></div>
-              <span className="media-item-time">19:01:11</span>
-            </div>
+            {recentDownloads.map((dl, i) => (
+              <div className="media-item" key={i}>
+                <div className={`platform-icon-box bg-${dl.type}`}>
+                  {dl.icon}
+                </div>
+                <div className="media-item-info">
+                  <h5>{dl.title}</h5>
+                  <span>{dl.duration}</span>
+                </div>
+                <span className="media-item-time">{dl.time}</span>
+              </div>
+            ))}
           </div>
+
           <button className="panel-footer-btn">Lihat Semua Riwayat →</button>
         </div>
       </section>
 
-      {/* ENDPOINT & STATISTIK HARI INI */}
+      {/* ================= ENDPOINT API & STATISTIK HARI INI ================= */}
       <section className="dual-split-grid" id="endpoint">
         <div className="card-panel">
           <div className="panel-header-row">
@@ -339,6 +513,7 @@ export default function App() {
             </div>
             <button className="green-pill-action">Lihat Dokumentasi</button>
           </div>
+
           <div className="table-wrapper">
             <table className="panel-table">
               <thead>
@@ -350,45 +525,111 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                <tr><td><span className="http-tag-get">GET</span></td><td><code>/api/download/tiktok</code></td><td>Download video TikTok</td><td><span className="status-live-dot">● Online</span></td></tr>
-                <tr><td><span className="http-tag-get">GET</span></td><td><code>/api/download/ytmp4</code></td><td>Download video YouTube</td><td><span className="status-live-dot">● Online</span></td></tr>
-                <tr><td><span className="http-tag-get">GET</span></td><td><code>/api/download/spotify</code></td><td>Download lagu Spotify</td><td><span className="status-live-dot">● Online</span></td></tr>
-                <tr><td><span className="http-tag-get">GET</span></td><td><code>/api/download/instagram</code></td><td>Download video Instagram</td><td><span className="status-live-dot">● Online</span></td></tr>
+                <tr>
+                  <td><span className="http-tag-get">GET</span></td>
+                  <td><code>/api/download/tiktok</code></td>
+                  <td>Download video TikTok</td>
+                  <td><span className="status-live-dot">● Online</span></td>
+                </tr>
+                <tr>
+                  <td><span className="http-tag-get">GET</span></td>
+                  <td><code>/api/download/ytmp4</code></td>
+                  <td>Download video YouTube (MP4)</td>
+                  <td><span className="status-live-dot">● Online</span></td>
+                </tr>
+                <tr>
+                  <td><span className="http-tag-get">GET</span></td>
+                  <td><code>/api/download/ytmp3</code></td>
+                  <td>Download audio YouTube (MP3)</td>
+                  <td><span className="status-live-dot">● Online</span></td>
+                </tr>
+                <tr>
+                  <td><span className="http-tag-get">GET</span></td>
+                  <td><code>/api/download/spotify</code></td>
+                  <td>Download lagu Spotify (MP3)</td>
+                  <td><span className="status-live-dot">● Online</span></td>
+                </tr>
+                <tr>
+                  <td><span className="http-tag-get">GET</span></td>
+                  <td><code>/api/download/instagram</code></td>
+                  <td>Download video Instagram</td>
+                  <td><span className="status-live-dot">● Online</span></td>
+                </tr>
+                <tr>
+                  <td><span className="http-tag-get">GET</span></td>
+                  <td><code>/api/tools/checker-ban-wa</code></td>
+                  <td>Cek ban WhatsApp</td>
+                  <td><span className="status-live-dot">● Online</span></td>
+                </tr>
               </tbody>
             </table>
           </div>
+
           <button className="panel-footer-btn">Lihat Semua Endpoint →</button>
         </div>
 
+        {/* STATISTIK & AKTIVITAS FEED REALTIME */}
         <div className="column-stacked">
           <div className="card-panel">
             <h3 className="panel-title">Statistik Hari Ini</h3>
             <div className="today-stats-grid">
-              <div className="today-item"><div className="mini-icon icon-green">👥</div><div className="today-item-meta"><span>Pengunjung</span><h4>12.845</h4></div></div>
-              <div className="today-item"><div className="mini-icon icon-purple">📥</div><div className="today-item-meta"><span>Download</span><h4>28.954</h4></div></div>
-              <div className="today-item"><div className="mini-icon icon-blue">‹/›</div><div className="today-item-meta"><span>Request</span><h4>64.512</h4></div></div>
-              <div className="today-item"><div className="mini-icon icon-orange">☁</div><div className="today-item-meta"><span>Bandwidth</span><h4>356.21 GB</h4></div></div>
+              <div className="today-item">
+                <div className="mini-icon icon-green">👥</div>
+                <div className="today-item-meta">
+                  <span>Pengunjung Hari Ini</span>
+                  <h4>12.845</h4>
+                </div>
+              </div>
+              <div className="today-item">
+                <div className="mini-icon icon-purple">📥</div>
+                <div className="today-item-meta">
+                  <span>Download Hari Ini</span>
+                  <h4>28.954</h4>
+                </div>
+              </div>
+              <div className="today-item">
+                <div className="mini-icon icon-blue">‹/›</div>
+                <div className="today-item-meta">
+                  <span>Request API Hari Ini</span>
+                  <h4>64.512</h4>
+                </div>
+              </div>
+              <div className="today-item">
+                <div className="mini-icon icon-orange">☁</div>
+                <div className="today-item-meta">
+                  <span>Bandwidth Hari Ini</span>
+                  <h4>356.21 GB</h4>
+                </div>
+              </div>
             </div>
           </div>
+
           <div className="card-panel">
             <h3 className="panel-title">Aktivitas Terbaru</h3>
             <div className="activity-feed">
-              <div className="activity-item"><span>🇮🇩 Pengunjung dari Indonesia</span><small>19:01:23</small></div>
-              <div className="activity-item"><span>♪ Download TikTok Video</span><small>19:01:21</small></div>
+              {activities.map((act, i) => (
+                <div className="activity-item" key={i}>
+                  <span>{act.text}</span>
+                  <small>{act.time}</small>
+                </div>
+              ))}
             </div>
             <button className="panel-footer-btn">Lihat Semua Aktivitas →</button>
           </div>
         </div>
       </section>
 
-      {/* FOOTER */}
+      {/* ================= FOOTER ================= */}
       <footer className="portal-footer">
         <div className="footer-columns-grid">
           <div className="footer-col-brand">
             <div className="nav-brand">
               <div className="brand-badge-logo">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 4c-3.3 0-5.5 1.6-5.5 4 0 4.6 11 2 11 6.6 0 2.6-2.2 4.4-5.5 4.4-3 0-5.6-1.5-5.6-3.4h2.8c0 .7 1.3 1.3 2.8 1.3 1.8 0 2.7-.8 2.7-1.6 0-4.6-11-2-11-6.6 0-3 2.4-4.7 5.5-4.7 2.8 0 5 1.3 5 3.3h-2.7c0-.8-1.2-1.3-2.5-1.3z" fill="#1ed760" />
+                  <path
+                    d="M12 4c-3.3 0-5.5 1.6-5.5 4 0 4.6 11 2 11 6.6 0 2.6-2.2 4.4-5.5 4.4-3 0-5.6-1.5-5.6-3.4h2.8c0 .7 1.3 1.3 2.8 1.3 1.8 0 2.7-.8 2.7-1.6 0-4.6-11-2-11-6.6 0-3 2.4-4.7 5.5-4.7 2.8 0 5 1.3 5 3.3h-2.7c0-.8-1.2-1.3-2.5-1.3z"
+                    fill="#1ed760"
+                  />
                 </svg>
               </div>
               <div className="brand-text">
@@ -396,7 +637,9 @@ export default function App() {
                 <span>FAST • SIMPLE • FREE</span>
               </div>
             </div>
-            <p className="footer-brand-desc">Platform download gratis, cepat, mudah dan tanpa ribet.</p>
+            <p className="footer-brand-desc">
+              Platform download gratis, cepat, mudah dan tanpa ribet.
+            </p>
           </div>
 
           <div className="footer-col-nav">
@@ -417,6 +660,7 @@ export default function App() {
               <li>YouTube Downloader</li>
               <li>Spotify Downloader</li>
               <li>Instagram Downloader</li>
+              <li>Cek Ban WhatsApp</li>
             </ul>
           </div>
 
@@ -426,6 +670,7 @@ export default function App() {
               <li>About</li>
               <li>API</li>
               <li>Dokumentasi</li>
+              <li>Terms</li>
               <li>Privacy</li>
             </ul>
           </div>
